@@ -14,9 +14,9 @@ export default defineConfig({
   ],
   // Start the Management Server before running tests
   webServer: {
-    command: 'dotnet run --project ../GameCafe.ManagementServer --no-build',
+    command: 'dotnet run --project ../GameCafe.ManagementServer',
     url: 'http://localhost:5000',
     reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
+    timeout: 120_000,
   },
 });

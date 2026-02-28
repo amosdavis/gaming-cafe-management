@@ -68,9 +68,6 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Build Management Server
-        run: dotnet build GameCafe.ManagementServer --configuration Release
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
