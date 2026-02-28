@@ -12,17 +12,7 @@ export default defineConfig({
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
   ],
-  // Start the Management Server before running tests.
-  // In CI the server is pre-started by the workflow; reuseExistingServer:true
-  // means Playwright will reuse it.  Locally it auto-starts if not running.
-  webServer: {
-    command: 'dotnet run --project ../GameCafe.ManagementServer',
-    url: 'http://127.0.0.1:5000',
-    reuseExistingServer: true,
-    timeout: 120_000,
-    env: {
-      ASPNETCORE_URLS: 'http://0.0.0.0:5000',
-      ASPNETCORE_ENVIRONMENT: 'Development',
-    },
-  },
+  // NOTE: No webServer config — CI workflow pre-starts the server.
+  // For local runs: start the server first with:
+  //   ASPNETCORE_URLS=http://127.0.0.1:5000 dotnet run --project ../GameCafe.ManagementServer
 });
