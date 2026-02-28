@@ -278,6 +278,28 @@ public class BillingController : ControllerBase
     }
 }
 
+// ── Settings ──────────────────────────────────────────────────────────────
+[ApiController]
+[Route("api/[controller]")]
+public class SettingsController : ControllerBase
+{
+    // In-memory singleton backed by cafe-settings.json on disk
+    private static GameCafe.Core.Models.CafeSettings _settings =
+        GameCafe.Core.Models.CafeSettings.LoadOrDefault();
+
+    [HttpGet]
+    public ActionResult<GameCafe.Core.Models.CafeSettings> Get() => Ok(_settings);
+
+    [HttpPut]
+    public ActionResult<GameCafe.Core.Models.CafeSettings> Update(
+        [FromBody] GameCafe.Core.Models.CafeSettings settings)
+    {
+        _settings = settings;
+        _settings.Save();
+        return Ok(_settings);
+    }
+}
+
 public class RevenueInfo
 {
     public decimal TotalRevenue { get; set; }

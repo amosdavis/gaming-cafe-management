@@ -305,8 +305,8 @@
     <!-- ── Main Content ──────────────────────────────────────────────── -->
     <main id="main-content" tabindex="-1">
 
-      <!-- Dashboard Section -->
-      <section id="section-dashboard" aria-labelledby="heading-dashboard">
+      <!-- ── Dashboard Section ──────────────────────────────────────── -->
+      <section id="section-dashboard" aria-labelledby="heading-dashboard" style="display:block">
         <header class="page-header">
           <h1 id="heading-dashboard">Dashboard</h1>
           <p>Live overview of all gaming stations and revenue</p>
@@ -387,6 +387,61 @@
               </tr>
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <!-- ── Settings Section ──────────────────────────────────────── -->
+      <section id="section-settings" aria-labelledby="heading-settings" style="display:none">
+        <header class="page-header">
+          <h1 id="heading-settings">Settings</h1>
+          <p>Configure launcher paths, hourly rate, and kiosk behaviour</p>
+        </header>
+
+        <div id="settings-save-banner" role="status" aria-live="polite" style="display:none"
+             class="status-banner">Saved successfully ✓</div>
+
+        <!-- Billing Rate -->
+        <div class="table-wrapper" role="region" aria-label="Billing settings">
+          <h2>Billing</h2>
+          <div class="form-group" style="max-width:320px">
+            <label for="setting-hourly-rate">Hourly Rate (USD)</label>
+            <input type="number" id="setting-hourly-rate" min="0" step="0.25"
+                   value="3.00" aria-describedby="rate-hint" />
+            <small id="rate-hint" style="color:var(--color-text-muted)">
+              Charged per hour, rounded up to the nearest hour.
+            </small>
+          </div>
+        </div>
+
+        <!-- Launchers -->
+        <div class="table-wrapper" role="region" aria-label="Launcher configuration">
+          <h2>Game Launchers</h2>
+          <p style="color:var(--color-text-muted);margin-bottom:1rem">
+            Enable/disable each launcher and set the path to its executable.
+            The kiosk login screen shows only enabled launchers.
+          </p>
+          <table id="launchers-table" aria-label="Launcher configuration">
+            <thead>
+              <tr>
+                <th scope="col">Enabled</th>
+                <th scope="col">Icon</th>
+                <th scope="col">Launcher</th>
+                <th scope="col">Executable Path</th>
+                <th scope="col">Launch Arguments</th>
+              </tr>
+            </thead>
+            <tbody id="launchers-tbody">
+              <tr><td colspan="5" style="text-align:center;color:var(--color-text-muted)">
+                <span class="spinner" aria-hidden="true"></span> Loading…
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top:1.5rem">
+          <button class="btn btn-primary" id="save-settings-btn" onclick="saveSettings()">
+            💾 Save Settings
+          </button>
         </div>
       </section>
 
@@ -527,6 +582,126 @@
     function escHtml(str) {
       return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     }
+
+    // ── Settings ───────────────────────────────────────────────────────
+
+    let _launchers = [];   // keep in memory for save
+
+    async function loadSettings() {
+      const data = await fetchJson("/settings");
+      if (!data) return;
+
+      document.getElementById("setting-hourly-rate").value =
+        (data.hourlyRate ?? data.HourlyRate ?? 3).toFixed(2);
+
+      _launchers = data.launchers ?? data.Launchers ?? [];
+      renderLaunchersTable();
+    }
+
+    function renderLaunchersTable() {
+      const tbody = document.getElementById("launchers-tbody");
+      if (!_launchers.length) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--color-text-muted)">No launchers configured.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = _launchers.map((l, i) => `
+        <tr>
+          <td style="text-align:center">
+            <input type="checkbox" id="l-enabled-${i}"
+              ${l.enabled ?? l.Enabled ? "checked" : ""}
+              aria-label="Enable ${escHtml(l.name ?? l.Name)}" />
+          </td>
+          <td style="font-size:1.6rem;text-align:center">${escHtml(l.icon ?? l.Icon ?? "🎮")}</td>
+          <td style="font-weight:600">${escHtml(l.name ?? l.Name ?? "")}</td>
+          <td>
+            <input type="text" id="l-path-${i}"
+              value="${escHtml(l.exePath ?? l.ExePath ?? "")}"
+              aria-label="Executable path for ${escHtml(l.name ?? l.Name)}"
+              style="width:100%;min-width:300px" />
+          </td>
+          <td>
+            <input type="text" id="l-args-${i}"
+              value="${escHtml(l.launchArgs ?? l.LaunchArgs ?? "")}"
+              aria-label="Launch arguments for ${escHtml(l.name ?? l.Name)}"
+              style="width:120px" />
+          </td>
+        </tr>`).join("");
+    }
+
+    async function saveSettings() {
+      const btn = document.getElementById("save-settings-btn");
+      btn.disabled = true;
+      btn.textContent = "Saving…";
+
+      // Collect launcher changes from the table
+      const updatedLaunchers = _launchers.map((l, i) => ({
+        key:        l.key        ?? l.Key        ?? "",
+        name:       l.name       ?? l.Name       ?? "",
+        icon:       l.icon       ?? l.Icon       ?? "🎮",
+        enabled:    document.getElementById(`l-enabled-${i}`)?.checked ?? true,
+        exePath:    document.getElementById(`l-path-${i}`)?.value   ?? "",
+        launchArgs: document.getElementById(`l-args-${i}`)?.value   ?? "",
+        protocolUri: l.protocolUri ?? l.ProtocolUri ?? ""
+      }));
+
+      const payload = {
+        hourlyRate: parseFloat(document.getElementById("setting-hourly-rate").value) || 3.0,
+        launchers:  updatedLaunchers
+      };
+
+      try {
+        const res = await fetch(`${API_BASE}/settings`, {
+          method:  "PUT",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        const saved = await res.json();
+        _launchers = saved.launchers ?? saved.Launchers ?? updatedLaunchers;
+        const banner = document.getElementById("settings-save-banner");
+        banner.style.display = "flex";
+        setTimeout(() => banner.style.display = "none", 3000);
+      } catch (err) {
+        alert(`Save failed: ${err.message}`);
+      }
+
+      btn.disabled  = false;
+      btn.textContent = "💾 Save Settings";
+    }
+
+    // ── Navigation (SPA-style section switching) ───────────────────────
+
+    const NAV_SECTIONS = {
+      dashboard: "section-dashboard",
+      stations:  "section-dashboard",   // reuse dashboard for now
+      sessions:  "section-dashboard",
+      billing:   "section-dashboard",
+      settings:  "section-settings",
+    };
+
+    function navigate(key) {
+      // Hide all sections
+      document.querySelectorAll("main > section").forEach(s => s.style.display = "none");
+      // Show target
+      const targetId = NAV_SECTIONS[key] ?? "section-dashboard";
+      const target = document.getElementById(targetId);
+      if (target) target.style.display = "block";
+
+      // Update aria-current
+      document.querySelectorAll("nav a").forEach(a => a.removeAttribute("aria-current"));
+      const active = document.getElementById(`nav-${key}`);
+      if (active) active.setAttribute("aria-current", "page");
+
+      if (key === "settings") loadSettings();
+    }
+
+    document.querySelectorAll("nav a[id^='nav-']").forEach(a => {
+      a.addEventListener("click", e => {
+        e.preventDefault();
+        const key = a.id.replace("nav-", "");
+        navigate(key);
+      });
+    });
 
     // ── Refresh loop ───────────────────────────────────────────────────
 

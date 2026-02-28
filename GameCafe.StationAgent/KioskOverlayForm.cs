@@ -6,56 +6,59 @@ using GameCafe.Core.Services;
 namespace GameCafe.StationAgent;
 
 /// <summary>
-/// Full-screen overlay for gaming cafe kiosk mode.
-/// Displays on top of Playnite with session timer and billing information.
+/// Full-screen kiosk overlay. Flow: Login → Launcher Selection → Session overlay (timer + cost).
 /// </summary>
 public class KioskOverlayForm : Form
 {
     private readonly IAuthenticationService _authService;
     private readonly ISessionService _sessionService;
-    private readonly IPlayniteIntegrationService _playniteService;
     private readonly IBillingService _billingService;
+    private readonly CafeSettings _settings;
 
     private User? _currentUser;
     private Session? _currentSession;
     private System.Windows.Forms.Timer? _sessionTimer;
-    private int _stationId = 1; // Default station ID
+    private int _stationId = 1;
+
+    // Background accent colours for each launcher card
+    private static readonly Dictionary<string, Color> LauncherColors = new()
+    {
+        ["playnite"] = Color.FromArgb(24, 80, 180),
+        ["steam"]    = Color.FromArgb(23, 48,  74),
+        ["epic"]     = Color.FromArgb(40, 40,  40),
+        ["ea"]       = Color.FromArgb(200, 40,  10),
+    };
 
     public KioskOverlayForm()
     {
-        // Initialize services
         var passwordHasher = new PasswordHasher();
-        _authService = new AuthenticationService(passwordHasher);
+        _authService   = new AuthenticationService(passwordHasher);
         _sessionService = new SessionService();
-        _playniteService = new PlayniteIntegrationService();
         _billingService = new BillingService();
+        _settings       = CafeSettings.LoadOrDefault();
 
-        // Setup fullscreen kiosk mode
-        this.FormBorderStyle = FormBorderStyle.None;
-        this.ControlBox = false;
-        this.KeyPreview = true;
-        this.Text = "Gaming Cafe Kiosk";
-        this.BackColor = Color.Black;
-        this.StartPosition = FormStartPosition.Manual;
-        this.KeyDown += KioskOverlayForm_KeyDown;
+        FormBorderStyle = FormBorderStyle.None;
+        ControlBox  = false;
+        KeyPreview  = true;
+        Text        = "Gaming Cafe Kiosk";
+        BackColor   = Color.Black;
+        StartPosition = FormStartPosition.Manual;
+        KeyDown    += KioskForm_KeyDown;
     }
 
     protected override void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
-        
-        // Force fullscreen AFTER form is loaded
         var screen = Screen.PrimaryScreen ?? Screen.AllScreens[0];
-        this.Bounds = screen.Bounds;
-        this.WindowState = FormWindowState.Maximized;
-        this.TopMost = true;
-        
+        Bounds      = screen.Bounds;
+        WindowState = FormWindowState.Maximized;
+        TopMost     = true;
         ShowLoginScreen();
     }
 
-    private void KioskOverlayForm_KeyDown(object? sender, KeyEventArgs e)
+    // ── Ctrl+Shift+Q → force-end session / admin exit ──────────────────
+    private void KioskForm_KeyDown(object? sender, KeyEventArgs e)
     {
-        // Allow Ctrl+Shift+Q for admin logout
         if (e.Control && e.Shift && e.KeyCode == Keys.Q)
         {
             e.Handled = true;
@@ -63,282 +66,357 @@ public class KioskOverlayForm : Form
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // SCREEN 1: Login
+    // ─────────────────────────────────────────────────────────────────────
     private void ShowLoginScreen()
     {
-        this.SuspendLayout();
-        this.Controls.Clear();
+        SuspendLayout();
+        Controls.Clear();
 
-        // Login panel
-        Panel loginPanel = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Color.FromArgb(20, 20, 30)
-        };
+        var bg = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(20, 20, 30) };
 
-        // Title
-        Label titleLabel = new Label
-        {
-            Text = "🎮 GAMING CAFE",
-            Font = new Font("Arial", 48, FontStyle.Bold),
-            ForeColor = Color.White,
-            TextAlign = ContentAlignment.TopCenter,
-            Location = new Point(0, 80),
-            Width = this.ClientSize.Width,
-            Height = 80,
-            AutoSize = false
-        };
+        var title = MakeLabel("🎮  GAMING CAFE", 48, FontStyle.Bold, Color.White,
+            new Point(0, 80), ClientSize.Width, 80, ContentAlignment.TopCenter);
 
-        // Username input
-        Label userLabel = new Label
-        {
-            Text = "Username:",
-            Font = new Font("Arial", 14),
-            ForeColor = Color.White,
-            Location = new Point((this.ClientSize.Width - 300) / 2, 250),
-            AutoSize = true
-        };
+        var sub = MakeLabel("Sign in to start your session", 14, FontStyle.Regular,
+            Color.Gray, new Point(0, 170), ClientSize.Width, 30, ContentAlignment.TopCenter);
 
-        TextBox userTextBox = new TextBox
-        {
-            Font = new Font("Arial", 14),
-            Width = 300,
-            Height = 40,
-            Location = new Point((this.ClientSize.Width - 300) / 2, 280),
-            BackColor = Color.White,
-            ForeColor = Color.Black
-        };
+        int cx = (ClientSize.Width - 320) / 2;
 
-        // Password input
-        Label passLabel = new Label
-        {
-            Text = "Password:",
-            Font = new Font("Arial", 14),
-            ForeColor = Color.White,
-            Location = new Point((this.ClientSize.Width - 300) / 2, 330),
-            AutoSize = true
-        };
+        var userLbl  = MakeLabel("Username", 13, FontStyle.Regular, Color.White, new Point(cx, 240), 320, 24);
+        var userBox  = MakeTextBox(new Point(cx, 266), 320, false);
+        var passLbl  = MakeLabel("Password", 13, FontStyle.Regular, Color.White, new Point(cx, 316), 320, 24);
+        var passBox  = MakeTextBox(new Point(cx, 342), 320, true);
+        var statusLbl = MakeLabel("Enter your credentials to continue", 12, FontStyle.Regular,
+            Color.Gray, new Point(0, ClientSize.Height - 50), ClientSize.Width, 40,
+            ContentAlignment.MiddleCenter);
 
-        TextBox passTextBox = new TextBox
+        var loginBtn = new Button
         {
-            Font = new Font("Arial", 14),
-            Width = 300,
-            Height = 40,
-            Location = new Point((this.ClientSize.Width - 300) / 2, 360),
-            PasswordChar = '*',
-            BackColor = Color.White,
-            ForeColor = Color.Black
-        };
-
-        // Login button
-        Button loginButton = new Button
-        {
-            Text = "LOGIN",
-            Font = new Font("Arial", 16, FontStyle.Bold),
-            Width = 300,
-            Height = 50,
-            Location = new Point((this.ClientSize.Width - 300) / 2, 430),
+            Text      = "LOGIN",
+            Font      = new Font("Segoe UI", 16, FontStyle.Bold),
+            Width     = 320, Height = 52,
+            Location  = new Point(cx, 408),
             BackColor = Color.FromArgb(0, 150, 255),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
-            Cursor = Cursors.Hand
+            Cursor    = Cursors.Hand
         };
-
-        loginButton.Click += async (s, e) =>
+        loginBtn.FlatAppearance.BorderSize = 0;
+        loginBtn.Click += async (s, e) =>
         {
-            await HandleLogin(userTextBox.Text, passTextBox.Text);
+            loginBtn.Enabled = false;
+            loginBtn.Text    = "Signing in…";
+            await HandleLogin(userBox.Text, passBox.Text, statusLbl);
+            loginBtn.Enabled = true;
+            loginBtn.Text    = "LOGIN";
         };
 
-        // Status label
-        Label statusLabel = new Label
+        // Allow pressing Enter from password box
+        passBox.KeyDown += async (s, e) =>
         {
-            Text = "Enter your credentials to continue",
-            Font = new Font("Arial", 12),
-            ForeColor = Color.Gray,
-            Location = new Point(0, this.ClientSize.Height - 50),
-            Width = this.ClientSize.Width,
-            Height = 50,
-            TextAlign = ContentAlignment.MiddleCenter,
-            AutoSize = false
+            if (e.KeyCode == Keys.Enter) { e.Handled = true; await HandleLogin(userBox.Text, passBox.Text, statusLbl); }
         };
 
-        loginPanel.Controls.AddRange(new Control[] 
-        { 
-            titleLabel, 
-            userLabel, 
-            userTextBox, 
-            passLabel, 
-            passTextBox, 
-            loginButton, 
-            statusLabel 
-        });
-
-        this.Controls.Add(loginPanel);
-        this.ResumeLayout();
-        userTextBox.Focus();
+        bg.Controls.AddRange(new Control[] { title, sub, userLbl, userBox, passLbl, passBox, loginBtn, statusLbl });
+        Controls.Add(bg);
+        ResumeLayout();
+        userBox.Focus();
     }
 
-    private async Task HandleLogin(string username, string password)
+    private async Task HandleLogin(string username, string password, Label statusLabel)
     {
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
         {
-            MessageBox.Show("Please enter username and password.", "Invalid Input", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            statusLabel.Text      = "Please enter your username and password.";
+            statusLabel.ForeColor = Color.OrangeRed;
             return;
         }
 
         try
         {
-            // Authenticate user
-            var authResult = await _authService.LoginAsync(username, password);
-            if (!authResult.Success || authResult.User == null)
+            var result = await _authService.LoginAsync(username, password);
+            if (!result.Success || result.User == null)
             {
-                MessageBox.Show($"Authentication failed: {authResult.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                statusLabel.Text      = $"Login failed: {result.Message}";
+                statusLabel.ForeColor = Color.OrangeRed;
                 return;
             }
 
-            _currentUser = authResult.User;
-
-            // Create session (assuming userId for station)
-            _currentSession = await _sessionService.CreateSessionAsync(_currentUser.Id, _stationId, "Playnite Library");
-            
-            // Launch Playnite fullscreen
-            await _playniteService.StartPlayniteKioskAsync();
-
-            ShowSessionOverlay();
+            _currentUser    = result.User;
+            _currentSession = await _sessionService.CreateSessionAsync(_currentUser.Id, _stationId, "Kiosk");
+            ShowLauncherSelection();
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Authentication failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            statusLabel.Text      = $"Error: {ex.Message}";
+            statusLabel.ForeColor = Color.OrangeRed;
         }
     }
 
-    private void ShowSessionOverlay()
+    // ─────────────────────────────────────────────────────────────────────
+    // SCREEN 2: Launcher Selection
+    // ─────────────────────────────────────────────────────────────────────
+    private void ShowLauncherSelection()
     {
-        this.SuspendLayout();
-        this.Controls.Clear();
+        SuspendLayout();
+        Controls.Clear();
 
-        // Semi-transparent overlay
-        Panel overlayPanel = new Panel
+        var bg = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(15, 15, 25) };
+
+        var title = MakeLabel($"Welcome, {_currentUser?.Username}!", 36, FontStyle.Bold,
+            Color.White, new Point(0, 50), ClientSize.Width, 60, ContentAlignment.TopCenter);
+
+        var sub = MakeLabel("Choose a gaming platform to get started", 16, FontStyle.Regular,
+            Color.Gray, new Point(0, 120), ClientSize.Width, 36, ContentAlignment.TopCenter);
+
+        // Enabled launchers from config
+        var enabled = _settings.Launchers.Where(l => l.Enabled).ToList();
+        int cardW = 260, cardH = 200, gap = 24;
+        int cols  = Math.Min(enabled.Count, 4);
+        int totalW = cols * cardW + (cols - 1) * gap;
+        int startX = (ClientSize.Width - totalW) / 2;
+        int startY = 180;
+
+        for (int i = 0; i < enabled.Count; i++)
         {
-            Dock = DockStyle.Fill,
-            BackColor = Color.FromArgb(30, 0, 0, 0)
+            var cfg  = enabled[i];
+            int col  = i % cols;
+            int row  = i / cols;
+            int x    = startX + col * (cardW + gap);
+            int y    = startY + row * (cardH + gap);
+
+            var bgColor = LauncherColors.TryGetValue(cfg.Key, out var c) ? c : Color.FromArgb(40, 40, 60);
+            var card = CreateLauncherCard(cfg, bgColor, new Point(x, y), cardW, cardH);
+            bg.Controls.Add(card);
+        }
+
+        // Logout link at the bottom
+        var logoutBtn = new Button
+        {
+            Text      = "← Not you? Log out",
+            Font      = new Font("Segoe UI", 11),
+            Width     = 240, Height = 36,
+            Location  = new Point((ClientSize.Width - 240) / 2, ClientSize.Height - 56),
+            BackColor = Color.Transparent,
+            ForeColor = Color.Gray,
+            FlatStyle = FlatStyle.Flat,
+            Cursor    = Cursors.Hand
+        };
+        logoutBtn.FlatAppearance.BorderSize = 0;
+        logoutBtn.Click += (s, e) => LogoutAndShowLogin();
+
+        bg.Controls.AddRange(new Control[] { title, sub, logoutBtn });
+        Controls.Add(bg);
+        ResumeLayout();
+    }
+
+    private Panel CreateLauncherCard(LauncherConfig cfg, Color bgColor, Point location, int w, int h)
+    {
+        var card = new Panel
+        {
+            Width     = w, Height    = h,
+            Location  = location,
+            BackColor = bgColor,
+            Cursor    = Cursors.Hand
         };
 
-        // Top-left: User info
-        Panel topLeftPanel = new Panel
+        var icon = new Label
         {
-            Width = 300,
-            Height = 120,
-            Location = new Point(20, 20),
-            BackColor = Color.FromArgb(200, 20, 20, 30),
-            BorderStyle = BorderStyle.FixedSingle
-        };
-
-        Label userInfoLabel = new Label
-        {
-            Text = $"👤 {_currentUser?.Username}\n\nID: {_currentUser?.Id}",
-            Font = new Font("Arial", 12),
+            Text      = cfg.Icon,
+            Font      = new Font("Segoe UI Emoji", 36),
             ForeColor = Color.White,
-            AutoSize = true,
-            Location = new Point(10, 10)
-        };
-        topLeftPanel.Controls.Add(userInfoLabel);
-
-        // Top-right: Timer and Cost (large)
-        Panel topRightPanel = new Panel
-        {
-            Width = 400,
-            Height = 150,
-            Location = new Point(this.ClientSize.Width - 420, 20),
-            BackColor = Color.FromArgb(200, 30, 100, 30),
-            BorderStyle = BorderStyle.FixedSingle
+            AutoSize  = false,
+            Width     = w, Height   = 70,
+            Location  = new Point(0, 28),
+            TextAlign = ContentAlignment.TopCenter
         };
 
-        Label timerLabel = new Label
+        var name = new Label
         {
-            Text = "00:00:00",
-            Font = new Font("Arial", 48, FontStyle.Bold),
-            ForeColor = Color.LimeGreen,
-            TextAlign = ContentAlignment.TopCenter,
-            Location = new Point(0, 10),
-            Width = 400,
-            Height = 70,
-            AutoSize = false
+            Text      = cfg.Name,
+            Font      = new Font("Segoe UI", 16, FontStyle.Bold),
+            ForeColor = Color.White,
+            AutoSize  = false,
+            Width     = w, Height   = 36,
+            Location  = new Point(0, 102),
+            TextAlign = ContentAlignment.TopCenter
         };
 
-        Label costLabel = new Label
+        var hint = new Label
         {
-            Text = "$0.00",
-            Font = new Font("Arial", 36, FontStyle.Bold),
-            ForeColor = Color.Yellow,
-            TextAlign = ContentAlignment.BottomCenter,
-            Location = new Point(0, 70),
-            Width = 400,
-            Height = 70,
-            AutoSize = false
+            Text      = File.Exists(cfg.ExePath) ? "Ready" : "Click to launch",
+            Font      = new Font("Segoe UI", 10),
+            ForeColor = Color.FromArgb(180, 255, 255, 255),
+            AutoSize  = false,
+            Width     = w, Height   = 26,
+            Location  = new Point(0, 144),
+            TextAlign = ContentAlignment.TopCenter
         };
 
-        topRightPanel.Controls.AddRange(new Control[] { timerLabel, costLabel });
+        card.Controls.AddRange(new Control[] { icon, name, hint });
 
-        // Bottom: Logout button
-        Button logoutButton = new Button
+        // Hover highlight
+        card.MouseEnter += (s, e) => card.BackColor = ControlPaint.Light(bgColor, 0.25f);
+        card.MouseLeave += (s, e) => card.BackColor = bgColor;
+
+        // Forward mouse events from child labels to the card click
+        EventHandler clickHandler = async (s, e) => await LaunchPlatform(cfg);
+        card.Click  += clickHandler;
+        icon.Click  += clickHandler;
+        name.Click  += clickHandler;
+        hint.Click  += clickHandler;
+
+        return card;
+    }
+
+    private async Task LaunchPlatform(LauncherConfig cfg)
+    {
+        try
         {
-            Text = "END SESSION (Ctrl+Shift+Q)",
-            Font = new Font("Arial", 14, FontStyle.Bold),
-            Width = 350,
-            Height = 60,
-            Location = new Point((this.ClientSize.Width - 350) / 2, this.ClientSize.Height - 80),
-            BackColor = Color.FromArgb(220, 0, 0),
+            if (File.Exists(cfg.ExePath))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName         = cfg.ExePath,
+                    Arguments        = cfg.LaunchArgs,
+                    UseShellExecute  = true
+                });
+            }
+            else if (!string.IsNullOrEmpty(cfg.ProtocolUri))
+            {
+                // Fallback: launch via URI scheme (steam://, com.epicgames.launcher://, etc.)
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName        = cfg.ProtocolUri,
+                    UseShellExecute = true
+                });
+            }
+            else
+            {
+                MessageBox.Show(
+                    $"{cfg.Name} was not found at:\n{cfg.ExePath}\n\nPlease update the path in Settings.",
+                    "Launcher Not Found", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to launch {cfg.Name}: {ex.Message}",
+                "Launch Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        // Update session game name
+        if (_currentSession != null)
+            _currentSession.GameName = cfg.Name;
+
+        ShowSessionOverlay(cfg.Name);
+        await Task.CompletedTask;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // SCREEN 3: Session Overlay (timer + cost, shown while platform runs)
+    // ─────────────────────────────────────────────────────────────────────
+    private void ShowSessionOverlay(string platformName)
+    {
+        SuspendLayout();
+        Controls.Clear();
+
+        // Semi-transparent dark overlay – Playnite/Steam runs behind this
+        var overlay = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(20, 0, 0, 0) };
+
+        // ── Top-left: user + platform ────────────────────────────────────
+        var infoBox = new Panel
+        {
+            Width     = 280, Height   = 110,
+            Location  = new Point(20, 20),
+            BackColor = Color.FromArgb(200, 20, 20, 30),
+        };
+        infoBox.Controls.Add(MakeLabel(
+            $"👤  {_currentUser?.Username}\n🎮  {platformName}",
+            12, FontStyle.Regular, Color.White, new Point(12, 10), 256, 90));
+
+        // ── Top-right: elapsed time + cost ───────────────────────────────
+        var timerBox = new Panel
+        {
+            Width     = 380, Height   = 140,
+            Location  = new Point(ClientSize.Width - 400, 20),
+            BackColor = Color.FromArgb(200, 20, 60, 20),
+        };
+
+        var timerLabel = MakeLabel("00:00:00", 48, FontStyle.Bold, Color.LimeGreen,
+            new Point(0, 8), 380, 72, ContentAlignment.TopCenter);
+        var costLabel  = MakeLabel("$0.00", 30, FontStyle.Bold, Color.Yellow,
+            new Point(0, 80), 380, 52, ContentAlignment.TopCenter);
+
+        timerBox.Controls.AddRange(new Control[] { timerLabel, costLabel });
+
+        // ── Bottom: platform-change + end-session buttons ────────────────
+        var changePlatformBtn = new Button
+        {
+            Text      = "⬅  Change Platform",
+            Font      = new Font("Segoe UI", 13, FontStyle.Bold),
+            Width     = 260, Height   = 52,
+            Location  = new Point((ClientSize.Width / 2) - 275, ClientSize.Height - 76),
+            BackColor = Color.FromArgb(60, 100, 180),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
-            Cursor = Cursors.Hand
+            Cursor    = Cursors.Hand
         };
+        changePlatformBtn.FlatAppearance.BorderSize = 0;
+        changePlatformBtn.Click += (s, e) => ShowLauncherSelection();
 
-        logoutButton.Click += (s, e) => LogoutAndShowLogin();
+        var endBtn = new Button
+        {
+            Text      = "End Session  (Ctrl+Shift+Q)",
+            Font      = new Font("Segoe UI", 13, FontStyle.Bold),
+            Width     = 300, Height   = 52,
+            Location  = new Point((ClientSize.Width / 2) + 5, ClientSize.Height - 76),
+            BackColor = Color.FromArgb(200, 30, 30),
+            ForeColor = Color.White,
+            FlatStyle = FlatStyle.Flat,
+            Cursor    = Cursors.Hand
+        };
+        endBtn.FlatAppearance.BorderSize = 0;
+        endBtn.Click += (s, e) => LogoutAndShowLogin();
 
-        overlayPanel.Controls.AddRange(new Control[] 
-        { 
-            topLeftPanel, 
-            topRightPanel, 
-            logoutButton 
-        });
+        overlay.Controls.AddRange(new Control[] { infoBox, timerBox, changePlatformBtn, endBtn });
+        Controls.Add(overlay);
+        ResumeLayout();
 
-        this.Controls.Add(overlayPanel);
-        this.ResumeLayout();
-
-        // Start session timer (updates every 1 second)
         StartSessionTimer(timerLabel, costLabel);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Timer
+    // ─────────────────────────────────────────────────────────────────────
     private void StartSessionTimer(Label timerLabel, Label costLabel)
     {
-        _sessionTimer = new System.Windows.Forms.Timer();
-        _sessionTimer.Interval = 1000; // Update every 1 second
-        _sessionTimer.Tick += (s, e) =>
+        StopSessionTimer();
+        _sessionTimer          = new System.Windows.Forms.Timer { Interval = 1000 };
+        _sessionTimer.Tick    += (s, e) =>
         {
-            if (_currentSession != null)
-            {
-                var elapsed = DateTime.UtcNow - _currentSession.StartTime;
-                timerLabel.Text = elapsed.ToString(@"hh\:mm\:ss");
-
-                // Calculate cost - duration in decimal minutes
-                int elapsedMinutes = (int)elapsed.TotalMinutes;
-                decimal cost = _billingService.CalculateHourlyCost(0, elapsedMinutes);
-                costLabel.Text = $"${cost:F2}";
-            }
+            if (_currentSession == null) return;
+            var elapsed     = DateTime.UtcNow - _currentSession.StartTime;
+            timerLabel.Text = elapsed.ToString(@"hh\:mm\:ss");
+            var cost        = _billingService.CalculateHourlyCost(_settings.HourlyRate, (int)elapsed.TotalMinutes);
+            costLabel.Text  = $"${cost:F2}";
         };
         _sessionTimer.Start();
     }
 
     private void StopSessionTimer()
     {
-        if (_sessionTimer != null)
-        {
-            _sessionTimer.Stop();
-            _sessionTimer.Dispose();
-            _sessionTimer = null;
-        }
+        _sessionTimer?.Stop();
+        _sessionTimer?.Dispose();
+        _sessionTimer = null;
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Logout / session end
+    // ─────────────────────────────────────────────────────────────────────
     private void LogoutAndShowLogin()
     {
         StopSessionTimer();
@@ -347,20 +425,15 @@ public class KioskOverlayForm : Form
         {
             try
             {
-                // Calculate final billing
-                var elapsed = DateTime.UtcNow - _currentSession.StartTime;
-                int elapsedMinutes = (int)elapsed.TotalMinutes;
-                decimal finalCost = _billingService.CalculateHourlyCost(0, elapsedMinutes);
+                var elapsed     = DateTime.UtcNow - _currentSession.StartTime;
+                int minutes     = (int)elapsed.TotalMinutes;
+                decimal cost    = _billingService.CalculateHourlyCost(_settings.HourlyRate, minutes);
 
-                // End the session
                 _sessionService.EndSessionAsync(_currentSession.Id).Wait();
 
-                // Show billing summary
                 MessageBox.Show(
-                    $"Session Ended\n\nDuration: {elapsedMinutes} minutes\nTotal Cost: ${finalCost:F2}",
-                    "Billing Summary",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                    $"Session Ended\n\nDuration: {elapsed:hh\\:mm\\:ss}\nTotal Cost: ${cost:F2}",
+                    "Billing Summary", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch { }
 
@@ -369,19 +442,19 @@ public class KioskOverlayForm : Form
 
         _currentUser = null;
 
-        // Close Playnite
-        try
+        // Kill any known launchers
+        foreach (var name in new[] { "Playnite", "steam", "EpicGamesLauncher", "EADesktop", "Origin" })
         {
-            var processes = Process.GetProcessesByName("Playnite");
-            foreach (var proc in processes)
+            try
             {
-                proc.CloseMainWindow();
-                proc.WaitForExit(2000);
-                if (!proc.HasExited)
-                    proc.Kill();
+                foreach (var p in Process.GetProcessesByName(name))
+                {
+                    p.CloseMainWindow();
+                    if (!p.WaitForExit(2000)) p.Kill();
+                }
             }
+            catch { }
         }
-        catch { }
 
         ShowLoginScreen();
     }
@@ -391,4 +464,32 @@ public class KioskOverlayForm : Form
         StopSessionTimer();
         base.OnFormClosing(e);
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────────────
+    private static Label MakeLabel(string text, float size, FontStyle style, Color color,
+        Point loc, int width, int height, ContentAlignment align = ContentAlignment.TopLeft)
+        => new Label
+        {
+            Text      = text,
+            Font      = new Font("Segoe UI", size, style),
+            ForeColor = color,
+            Location  = loc,
+            Width     = width, Height = height,
+            TextAlign = align,
+            AutoSize  = false
+        };
+
+    private static TextBox MakeTextBox(Point loc, int width, bool password)
+        => new TextBox
+        {
+            Font         = new Font("Segoe UI", 14),
+            Width        = width, Height = 40,
+            Location     = loc,
+            BackColor    = Color.FromArgb(40, 44, 60),
+            ForeColor    = Color.White,
+            BorderStyle  = BorderStyle.FixedSingle,
+            PasswordChar = password ? '*' : '\0'
+        };
 }
