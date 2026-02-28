@@ -6,7 +6,7 @@ export default defineConfig({
   fullyParallel: true,
   reporter: [['html', { open: 'never' }], ['list']],
   use: {
-    baseURL: 'http://localhost:5000',
+    baseURL: 'http://127.0.0.1:5000',
     trace: 'on-first-retry',
   },
   projects: [
@@ -17,11 +17,11 @@ export default defineConfig({
   // means Playwright will reuse it.  Locally it auto-starts if not running.
   webServer: {
     command: 'dotnet run --project ../GameCafe.ManagementServer',
-    url: 'http://localhost:5000',
+    url: 'http://127.0.0.1:5000',
     reuseExistingServer: true,
     timeout: 120_000,
     env: {
-      ASPNETCORE_URLS: 'http://localhost:5000',
+      ASPNETCORE_URLS: 'http://0.0.0.0:5000',
       ASPNETCORE_ENVIRONMENT: 'Development',
     },
   },
