@@ -1,0 +1,37 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.nupkg
+*.snupkg
+publish/
+
+# Secrets (Rule 9 - never commit secrets)
+appsettings.Development.json
+appsettings.Production.json
+*.pfx
+*.key
+secrets.json
+.env
+.env.*
+
+# SQLite database files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Go
+bdd-tests/vendor/
+
+# Node / Playwright
+playwright-tests/node_modules/
+playwright-tests/test-results/
+playwright-tests/playwright-report/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
