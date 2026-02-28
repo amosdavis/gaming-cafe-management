@@ -69,16 +69,16 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore .NET dependencies
-        run: dotnet restore
+        run: dotnet restore GameCafe.ManagementServer/GameCafe.ManagementServer.csproj
 
       - name: Build Management Server
-        run: dotnet build GameCafe.ManagementServer --no-restore
+        run: dotnet build GameCafe.ManagementServer/GameCafe.ManagementServer.csproj --no-restore
 
       - name: Start Management Server in background
         run: |
           ASPNETCORE_URLS=http://localhost:5000 \
           ASPNETCORE_ENVIRONMENT=Development \
-          dotnet run --project GameCafe.ManagementServer --no-build &
+          dotnet run --project GameCafe.ManagementServer/GameCafe.ManagementServer.csproj --no-build &
           echo "Waiting for server on port 5000..."
           for i in $(seq 1 60); do
             if curl -sf http://localhost:5000/swagger/index.html > /dev/null 2>&1; then
