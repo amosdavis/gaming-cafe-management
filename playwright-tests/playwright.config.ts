@@ -17,6 +17,10 @@ export default defineConfig({
     command: 'dotnet run --project ../GameCafe.ManagementServer',
     url: 'http://localhost:5000',
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: 240_000,
+    env: {
+      ASPNETCORE_URLS: 'http://localhost:5000',
+      ASPNETCORE_ENVIRONMENT: 'Development',
+    },
   },
 });
