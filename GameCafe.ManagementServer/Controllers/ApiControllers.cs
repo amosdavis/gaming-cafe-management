@@ -145,6 +145,21 @@ public class SessionsController : ControllerBase
         }
     }
 
+    [HttpGet]
+    public async Task<ActionResult<List<SessionInfo>>> GetAll()
+    {
+        var sessions = await _sessionService.GetActiveSessionsAsync();
+        return Ok(sessions.Select(s => new SessionInfo
+        {
+            Id = s.Id,
+            UserId = s.UserId,
+            StationId = s.StationId,
+            GameName = s.GameName,
+            DurationMinutes = s.DurationMinutes,
+            Cost = s.TotalCost
+        }).ToList());
+    }
+
     [HttpGet("active")]
     public async Task<ActionResult<List<SessionInfo>>> GetActive()
     {
@@ -223,6 +238,24 @@ public class BillingController : ControllerBase
                 Message = ex.Message
             });
         }
+    }
+
+    [HttpGet("analytics")]
+    public async Task<ActionResult<RevenueInfo>> GetAnalytics([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
+    {
+        var total = await _billingService.GetTotalRevenueAsync(startDate, endDate);
+        var topGames = await _billingService.GetTopGamesAsync(10);
+        return Ok(new RevenueInfo
+        {
+            TotalRevenue = total,
+            DateRange = $"{startDate?.Date:yyyy-MM-dd} to {endDate?.Date:yyyy-MM-dd}",
+            TopGames = topGames.Select(g => new GameStat
+            {
+                GameName = g.GameName,
+                PlayCount = g.PlayCount,
+                Revenue = g.Revenue
+            }).ToList()
+        });
     }
 
     [HttpGet("revenue")]
