@@ -30,7 +30,10 @@ app.UseSwagger();
 app.UseSwaggerUI();
 app.UseDefaultFiles();   // serves index.html at /
 app.UseStaticFiles();    // serves wwwroot/
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseRouting();
 app.UseCors("AllowStations");
 app.MapControllers();
