@@ -160,6 +160,13 @@ public class KioskOverlayForm : Form
     // ─────────────────────────────────────────────────────────────────────
     private void ShowLauncherSelection()
     {
+        // Ensure we're back to fullscreen when showing the picker
+        var screen = Screen.PrimaryScreen ?? Screen.AllScreens[0];
+        FormBorderStyle = FormBorderStyle.None;
+        Bounds      = screen.Bounds;
+        WindowState = FormWindowState.Maximized;
+        TopMost     = true;
+
         SuspendLayout();
         Controls.Clear();
 
@@ -317,64 +324,74 @@ public class KioskOverlayForm : Form
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // SCREEN 3: Session Overlay (timer + cost, shown while platform runs)
+    // SCREEN 3: HUD widget — shrinks to a small draggable corner overlay
+    //           so the launcher (Steam/Epic/etc.) fills the screen behind it.
     // ─────────────────────────────────────────────────────────────────────
     private void ShowSessionOverlay(string platformName)
     {
         SuspendLayout();
         Controls.Clear();
 
-        // Semi-transparent dark overlay – Playnite/Steam runs behind this
-        var overlay = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(20, 0, 0, 0) };
+        // ── Shrink form to a small HUD in top-right corner ───────────────
+        FormBorderStyle = FormBorderStyle.None;
+        TopMost         = true;
 
-        // ── Top-left: user + platform ────────────────────────────────────
-        var infoBox = new Panel
+        const int HudW = 320, HudH = 200;
+        var screen = Screen.PrimaryScreen ?? Screen.AllScreens[0];
+        Bounds      = new Rectangle(screen.Bounds.Right - HudW - 16,
+                                    screen.Bounds.Top   + 16,
+                                    HudW, HudH);
+        WindowState = FormWindowState.Normal;
+
+        BackColor   = Color.FromArgb(18, 22, 32);
+
+        // Drag support: click anywhere on the HUD to move it
+        Point _dragStart = Point.Empty;
+        MouseDown += (s, e) => { if (e.Button == MouseButtons.Left) _dragStart = e.Location; };
+        MouseMove += (s, e) =>
         {
-            Width     = 280, Height   = 110,
-            Location  = new Point(20, 20),
-            BackColor = Color.FromArgb(200, 20, 20, 30),
+            if (e.Button == MouseButtons.Left)
+                Location = new Point(Location.X + e.X - _dragStart.X,
+                                     Location.Y + e.Y - _dragStart.Y);
         };
-        infoBox.Controls.Add(MakeLabel(
-            $"👤  {_currentUser?.Username}\n🎮  {platformName}",
-            12, FontStyle.Regular, Color.White, new Point(12, 10), 256, 90));
 
-        // ── Top-right: elapsed time + cost ───────────────────────────────
-        var timerBox = new Panel
+        // ── User + platform row ──────────────────────────────────────────
+        var userLbl = MakeLabel($"👤 {_currentUser?.Username}   🎮 {platformName}",
+            9, FontStyle.Regular, Color.FromArgb(160, 200, 255),
+            new Point(10, 10), HudW - 20, 20);
+
+        // ── Timer ────────────────────────────────────────────────────────
+        var timerLabel = MakeLabel("00:00:00",
+            36, FontStyle.Bold, Color.LimeGreen,
+            new Point(0, 30), HudW, 52, ContentAlignment.TopCenter);
+
+        // ── Cost ─────────────────────────────────────────────────────────
+        var costLabel = MakeLabel("$0.00",
+            22, FontStyle.Bold, Color.Yellow,
+            new Point(0, 82), HudW, 36, ContentAlignment.TopCenter);
+
+        // ── Buttons row ──────────────────────────────────────────────────
+        var switchBtn = new Button
         {
-            Width     = 380, Height   = 140,
-            Location  = new Point(ClientSize.Width - 400, 20),
-            BackColor = Color.FromArgb(200, 20, 60, 20),
-        };
-
-        var timerLabel = MakeLabel("00:00:00", 48, FontStyle.Bold, Color.LimeGreen,
-            new Point(0, 8), 380, 72, ContentAlignment.TopCenter);
-        var costLabel  = MakeLabel("$0.00", 30, FontStyle.Bold, Color.Yellow,
-            new Point(0, 80), 380, 52, ContentAlignment.TopCenter);
-
-        timerBox.Controls.AddRange(new Control[] { timerLabel, costLabel });
-
-        // ── Bottom: platform-change + end-session buttons ────────────────
-        var changePlatformBtn = new Button
-        {
-            Text      = "⬅  Change Platform",
-            Font      = new Font("Segoe UI", 13, FontStyle.Bold),
-            Width     = 260, Height   = 52,
-            Location  = new Point((ClientSize.Width / 2) - 275, ClientSize.Height - 76),
-            BackColor = Color.FromArgb(60, 100, 180),
+            Text      = "⬅ Switch",
+            Font      = new Font("Segoe UI", 9, FontStyle.Bold),
+            Width     = 100, Height = 32,
+            Location  = new Point(10, HudH - 44),
+            BackColor = Color.FromArgb(50, 90, 160),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
             Cursor    = Cursors.Hand
         };
-        changePlatformBtn.FlatAppearance.BorderSize = 0;
-        changePlatformBtn.Click += (s, e) => ShowLauncherSelection();
+        switchBtn.FlatAppearance.BorderSize = 0;
+        switchBtn.Click += (s, e) => ShowLauncherSelectionAsFullscreen();
 
         var endBtn = new Button
         {
-            Text      = "End Session  (Ctrl+Shift+Q)",
-            Font      = new Font("Segoe UI", 13, FontStyle.Bold),
-            Width     = 300, Height   = 52,
-            Location  = new Point((ClientSize.Width / 2) + 5, ClientSize.Height - 76),
-            BackColor = Color.FromArgb(200, 30, 30),
+            Text      = "End Session",
+            Font      = new Font("Segoe UI", 9, FontStyle.Bold),
+            Width     = 120, Height = 32,
+            Location  = new Point(HudW - 130, HudH - 44),
+            BackColor = Color.FromArgb(180, 30, 30),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
             Cursor    = Cursors.Hand
@@ -382,11 +399,24 @@ public class KioskOverlayForm : Form
         endBtn.FlatAppearance.BorderSize = 0;
         endBtn.Click += (s, e) => LogoutAndShowLogin();
 
-        overlay.Controls.AddRange(new Control[] { infoBox, timerBox, changePlatformBtn, endBtn });
-        Controls.Add(overlay);
+        var hintLbl = MakeLabel("drag to move  •  Ctrl+Shift+Q to end",
+            7, FontStyle.Regular, Color.FromArgb(80, 120, 80),
+            new Point(0, HudH - 14), HudW, 14, ContentAlignment.TopCenter);
+
+        Controls.AddRange(new Control[] { userLbl, timerLabel, costLabel, switchBtn, endBtn, hintLbl });
         ResumeLayout();
 
         StartSessionTimer(timerLabel, costLabel);
+    }
+
+    // Returns to full-screen launcher selection (pauses the game choice)
+    private void ShowLauncherSelectionAsFullscreen()
+    {
+        StopSessionTimer();
+        var screen = Screen.PrimaryScreen ?? Screen.AllScreens[0];
+        Bounds      = screen.Bounds;
+        WindowState = FormWindowState.Maximized;
+        ShowLauncherSelection();
     }
 
     // ─────────────────────────────────────────────────────────────────────
